@@ -1,0 +1,35 @@
+[package]
+name = "fluence"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["rt-multi-thread", "time", "macros"] }
+async-trait = "0.1"
+
+# Solana core
+solana-sdk = "1.17"
+solana-client = "1.17"
+solana-program = "1.17"
+
+# SPL programs
+spl-stake-pool = "1.0"
+spl-token = "4.0"
+
+# Configuration & environment
+dotenv = "0.15"
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+
+# Utilities
+bs58 = "0.5.1"
