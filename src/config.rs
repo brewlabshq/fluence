@@ -21,6 +21,25 @@ impl PoolType {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EpochStorageType {
+    Memory,
+    File,
+}
+
+impl EpochStorageType {
+    pub fn from_str(s: &str) -> Result<Self> {
+        match s.to_lowercase().as_str() {
+            "memory" => Ok(EpochStorageType::Memory),
+            "file" => Ok(EpochStorageType::File),
+            _ => Err(CrankerError::Config(format!(
+                "Invalid epoch storage type '{}'. Expected 'memory' or 'file'",
+                s
+            ))),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CrankerConfig {
     pub pool_type: PoolType,
@@ -29,7 +48,9 @@ pub struct CrankerConfig {
     pub pool_reserve_address: String,
     pub pool_address: Option<String>,
     pub crank_amount: u64,
-    pub crank_interval: Duration,
+    pub epoch_poll_interval: Duration,
+    pub epoch_storage_type: EpochStorageType,
+    pub epoch_state_file: String,
 }
 
 impl CrankerConfig {
@@ -55,9 +76,16 @@ impl CrankerConfig {
             .parse::<u64>()
             .map_err(|e| CrankerError::Config(format!("Invalid CRANK_AMOUNT: {}", e)))?;
 
-        let crank_interval_str = env::var("CRANK_INTERVAL")
-            .map_err(|_| CrankerError::Config("CRANK_INTERVAL not set".to_string()))?;
-        let crank_interval = parse_duration(&crank_interval_str)?;
+        let epoch_poll_interval_str = env::var("EPOCH_POLL_INTERVAL")
+            .unwrap_or_else(|_| "5m".to_string());
+        let epoch_poll_interval = parse_duration(&epoch_poll_interval_str)?;
+
+        let epoch_storage_type_str = env::var("EPOCH_STORAGE_TYPE")
+            .unwrap_or_else(|_| "memory".to_string());
+        let epoch_storage_type = EpochStorageType::from_str(&epoch_storage_type_str)?;
+
+        let epoch_state_file = env::var("EPOCH_STATE_FILE")
+            .unwrap_or_else(|_| ".epoch_state".to_string());
 
         Ok(Self {
             pool_type,
@@ -66,7 +94,9 @@ impl CrankerConfig {
             pool_reserve_address,
             pool_address,
             crank_amount,
-            crank_interval,
+            epoch_poll_interval,
+            epoch_storage_type,
+            epoch_state_file,
         })
     }
 }

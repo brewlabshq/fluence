@@ -1,4 +1,5 @@
 mod config;
+mod epoch_state;
 mod error;
 mod pool;
 mod scheduler;
@@ -24,12 +25,13 @@ async fn main() -> Result<()> {
     let config = config::CrankerConfig::load()?;
 
     tracing::info!(
-        "Configuration loaded: pool_type={:?}, interval={:?}",
+        "Configuration loaded: pool_type={:?}, epoch_poll_interval={:?}, epoch_storage={:?}",
         config.pool_type,
-        config.crank_interval
+        config.epoch_poll_interval,
+        config.epoch_storage_type
     );
 
-    let scheduler = scheduler::CrankScheduler::new(config)?;
+    let mut scheduler = scheduler::CrankScheduler::new(config)?;
 
     scheduler.run().await?;
 
