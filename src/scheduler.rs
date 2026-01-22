@@ -3,6 +3,7 @@ use crate::epoch_state::EpochState;
 use crate::error::Result;
 use crate::pool::{native::NativePoolHandler, sanctum::SanctumPoolHandler, PoolHandler};
 use crate::transaction;
+use anyhow::Context;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::{pubkey::Pubkey, signature::Keypair, signer::Signer};
 use std::str::FromStr;
@@ -75,6 +76,16 @@ impl CrankScheduler {
                 Ok(info) => info.epoch,
                 Err(e) => {
                     tracing::error!("Failed to get epoch info: {}", e);
+                    if let Some(ref channel_id) = self.config.slack_channel_id {
+                        if let Err(err) = slack_notification::send::send_message(
+                            channel_id,
+                            "Rpc is failing to get the latest epoch info. Retrying again in next poll interval",
+                        )
+                        .await
+                        {
+                            tracing::error!("Failed to send slack message about rpc failure: {}", err);
+                        }
+                    }
                     continue;
                 }
             };
@@ -93,6 +104,20 @@ impl CrankScheduler {
             }
 
             tracing::info!("New epoch detected: {}. Starting crank cycle...", current_epoch);
+
+            if let Some(ref channel_id) = self.config.slack_channel_id {
+                if let Err(err) = slack_notification::send::send_message(
+                    channel_id,
+                    &format!(
+                        "Epoch changed, executing crank cycle for epoch {}",
+                        current_epoch
+                    ),
+                )
+                .await
+                {
+                    tracing::error!("Failed to send slack message about epoch change: {}", err);
+                }
+            }
 
             match self.execute_crank().await {
                 Ok((deposit_sig, crank_sig)) => {
@@ -117,6 +142,16 @@ impl CrankScheduler {
                 }
                 Err(e) => {
                     tracing::error!("Crank cycle failed for epoch {}: {}", current_epoch, e);
+                    if let Some(ref channel_id) = self.config.slack_channel_id {
+                        if let Err(err) = slack_notification::send::send_message(
+                            channel_id,
+                            &format!("Failed to run crank cycle for epoch {}", current_epoch),
+                        )
+                        .await
+                        {
+                            tracing::error!("Failed to send slack message about crank failure: {}", err);
+                        }
+                    }
                 }
             }
         }
