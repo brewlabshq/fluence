@@ -51,6 +51,8 @@ pub struct CrankerConfig {
     pub epoch_poll_interval: Duration,
     pub epoch_storage_type: EpochStorageType,
     pub epoch_state_file: String,
+    pub slack_token: Option<String>,
+    pub slack_channel_id: Option<String>,
 }
 
 impl CrankerConfig {
@@ -87,6 +89,9 @@ impl CrankerConfig {
         let epoch_state_file = env::var("EPOCH_STATE_FILE")
             .unwrap_or_else(|_| ".epoch_state".to_string());
 
+        let slack_token = env::var("SLACK_TOKEN").ok();
+        let slack_channel_id = env::var("SLACK_CHANNEL_ID").ok();
+
         Ok(Self {
             pool_type,
             rpc_url,
@@ -97,6 +102,8 @@ impl CrankerConfig {
             epoch_poll_interval,
             epoch_storage_type,
             epoch_state_file,
+            slack_token,
+            slack_channel_id,
         })
     }
 }

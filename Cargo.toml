@@ -33,3 +33,6 @@ serde = { version = "1", features = ["derive"] }
 
 # Utilities
 bs58 = "0.5.1"
+
+# Slack notifications
+slack-notification = { git = "https://github.com/brewlabshq/slack-notification-crate", package = "slack-notification" }
