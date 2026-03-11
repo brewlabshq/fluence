@@ -79,7 +79,12 @@ impl CrankScheduler {
                     if let Some(ref channel_id) = self.config.slack_channel_id {
                         if let Err(err) = slack_notification::send::send_message(
                             channel_id,
-                            "Rpc is failing to get the latest epoch info. Retrying again in next poll interval",
+                            &format!(
+                                "(Fluence) RPC error while fetching epoch info\n• Endpoint: `{}`\n• Error: `{}`\n• Next retry in: `{:?}`",
+                                self.config.rpc_url,
+                                e,
+                                self.config.epoch_poll_interval
+                            ),
                         )
                         .await
                         {
@@ -105,26 +110,33 @@ impl CrankScheduler {
 
             tracing::info!("New epoch detected: {}. Starting crank cycle...", current_epoch);
 
-            if let Some(ref channel_id) = self.config.slack_channel_id {
-                if let Err(err) = slack_notification::send::send_message(
-                    channel_id,
-                    &format!(
-                        "Epoch changed, executing crank cycle for epoch {}",
-                        current_epoch
-                    ),
-                )
-                .await
-                {
-                    tracing::error!("Failed to send slack message about epoch change: {}", err);
-                }
-            }
-
             match self.execute_crank().await {
                 Ok((deposit_sig, crank_sig)) => {
                     last_cranked_epoch = Some(current_epoch);
                     if let Err(e) = self.epoch_state.save(current_epoch) {
                         tracing::error!("Failed to save epoch state: {}", e);
                     }
+                    let reserve_address =
+                        Pubkey::from_str(&self.config.pool_reserve_address).map_err(|e| {
+                            crate::error::CrankerError::Config(format!(
+                                "Invalid reserve address: {}",
+                                e
+                            ))
+                        })?;
+
+                    let pool_address = if let Some(ref pool_addr) = self.config.pool_address {
+                        Pubkey::from_str(pool_addr).map_err(|e| {
+                            crate::error::CrankerError::Config(format!(
+                                "Invalid pool address: {}",
+                                e
+                            ))
+                        })?
+                    } else {
+                        reserve_address
+                    };
+
+                    let crank_amount_sol = self.config.crank_amount as f64 / 1_000_000_000_f64;
+
                     if let Some(sig) = crank_sig {
                         tracing::info!(
                             "Crank cycle completed for epoch {}: deposit={}, crank={}",
@@ -132,24 +144,97 @@ impl CrankScheduler {
                             deposit_sig,
                             sig
                         );
+                        if let Some(ref channel_id) = self.config.slack_channel_id {
+                            if let Err(err) = slack_notification::send::send_message(
+                                channel_id,
+                                &format!(
+                                    "(Fluence) Crank cycle completed successfully\n• Epoch: `{}`\n• Pool address: `{}`\n• Admin: `{}`\n• Crank amount: `{}` SOL\n• Deposit tx: `{}`\n• Crank tx: `{}`",
+                                    current_epoch,
+                                    pool_address,
+                                    self.admin_keypair.pubkey(),
+                                    crank_amount_sol,
+                                    deposit_sig,
+                                    sig
+                                ),
+                            )
+                            .await
+                            {
+                                tracing::error!(
+                                    "Failed to send slack message about crank success: {}",
+                                    err
+                                );
+                            }
+                        }
                     } else {
                         tracing::info!(
                             "Crank cycle completed for epoch {}: deposit={} (crank not required)",
                             current_epoch,
                             deposit_sig
                         );
+                        if let Some(ref channel_id) = self.config.slack_channel_id {
+                            if let Err(err) = slack_notification::send::send_message(
+                                channel_id,
+                                &format!(
+                                    "(Fluence) Crank cycle completed successfully (crank not required)\n• Epoch: `{}`\n• Pool address: `{}`\n• Admin: `{}`\n• Crank amount: `{}` SOL\n• Deposit tx: `{}`\n• Crank tx: `not required`",
+                                    current_epoch,
+                                    pool_address,
+                                    self.admin_keypair.pubkey(),
+                                    crank_amount_sol,
+                                    deposit_sig
+                                ),
+                            )
+                            .await
+                            {
+                                tracing::error!(
+                                    "Failed to send slack message about crank success (not required): {}",
+                                    err
+                                );
+                            }
+                        }
                     }
                 }
                 Err(e) => {
                     tracing::error!("Crank cycle failed for epoch {}: {}", current_epoch, e);
+
+                    let reserve_address =
+                        Pubkey::from_str(&self.config.pool_reserve_address).map_err(|e| {
+                            crate::error::CrankerError::Config(format!(
+                                "Invalid reserve address: {}",
+                                e
+                            ))
+                        })?;
+
+                    let pool_address = if let Some(ref pool_addr) = self.config.pool_address {
+                        Pubkey::from_str(pool_addr).map_err(|e| {
+                            crate::error::CrankerError::Config(format!(
+                                "Invalid pool address: {}",
+                                e
+                            ))
+                        })?
+                    } else {
+                        reserve_address
+                    };
+
+                    let crank_amount_sol = self.config.crank_amount as f64 / 1_000_000_000_f64;
+
                     if let Some(ref channel_id) = self.config.slack_channel_id {
                         if let Err(err) = slack_notification::send::send_message(
                             channel_id,
-                            &format!("Failed to run crank cycle for epoch {}", current_epoch),
+                            &format!(
+                                "(Fluence) Crank cycle failed\n• Epoch: `{}`\n• Pool address: `{}`\n• Admin: `{}`\n• Crank amount: `{}` SOL\n• Error: `{}`\n• Action: will retry on next poll interval",
+                                current_epoch,
+                                pool_address,
+                                self.admin_keypair.pubkey(),
+                                crank_amount_sol,
+                                e
+                            ),
                         )
                         .await
                         {
-                            tracing::error!("Failed to send slack message about crank failure: {}", err);
+                            tracing::error!(
+                                "Failed to send slack message about crank failure: {}",
+                                err
+                            );
                         }
                     }
                 }
